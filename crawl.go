@@ -12,7 +12,12 @@ import (
 )
 
 const (
-	url_prefix = "http"
+	url_prefix         = "http"
+	invalid_url        = "Please specify a fully formed url starting with 'http' or 'https"
+	no_url_provided    = "Please specify start page"
+	exit_code          = 1
+	index_zero         = 0
+	minimum_args_count = 1
 )
 
 func main() {
@@ -20,16 +25,16 @@ func main() {
 	args := flag.Args()
 	fmt.Println(args)
 
-	if len(args) < 1 {
-		fmt.Println("Please specify start page")
-		os.Exit(1)
+	if len(args) < minimum_args_count {
+		fmt.Println(no_url_provided)
+		os.Exit(exit_code)
 	}
 
-	url := args[0]
+	url := args[index_zero]
 
 	if !strings.HasPrefix(url, url_prefix) {
-		fmt.Println("Please specify a fully formed url starting with 'http' or 'https")
-		os.Exit(1)
+		fmt.Println(invalid_url)
+		os.Exit(exit_code)
 	}
 
 	client := createHttpClientWithoutSSLVerification()
