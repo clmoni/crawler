@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io/ioutil"
 	"net/http"
+	"sync"
 	"testing"
 )
 
@@ -22,12 +23,12 @@ func NewTestClient(fn RoundTripFunc) *http.Client {
 
 func TestVisitLinkNotVisited(t *testing.T) {
 	client := createFakeClient("")
-	linksToVisit := make(chan string, 1)
 	linksToPrint := make(chan string, 1)
 	visited := make(map[string]bool)
+	var wg sync.WaitGroup
 
-	ce := NewCrawlerEngine(&linksToVisit, &linksToPrint, &client, &visited, "")
-	visitLink(ce, "test.com/tests")
+	ce := NewCrawlerEngine(&linksToPrint, &client, &visited, "", &wg)
+	visitLink(ce, "test.com/tests", linksToPrint)
 	visitedLinks := *ce.visitedLinks
 	if !visitedLinks["test.com/tests"] {
 		t.Error("Failed to visit link")

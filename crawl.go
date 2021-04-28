@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/clmoni/crawler/crawlerengine"
 )
@@ -38,13 +39,15 @@ func main() {
 	}
 
 	client := createHttpClientWithoutSSLVerification()
-	linksToVisit := make(chan string, 1)
 	linksToPrint := make(chan string, 1)
 	visited := make(map[string]bool)
+	var wg sync.WaitGroup
 
-	ce := crawlerengine.NewCrawlerEngine(&linksToVisit, &linksToPrint, &client, &visited, url)
+	ce := crawlerengine.NewCrawlerEngine(&linksToPrint, &client, &visited, url, &wg)
 	go ce.Crawl()
 	go ce.Print()
+	// ce.WaitTillFinishAndExit()
+
 	var input string
 	fmt.Scanln(&input)
 }

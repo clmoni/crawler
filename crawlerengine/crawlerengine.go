@@ -5,14 +5,17 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/clmoni/crawler/linkengine"
 )
 
 const (
-	url_format    = "%s://%s"
-	forward_slash = "/"
-	empty_string  = ""
+	url_format          = "%s://%s"
+	forward_slash       = "/"
+	empty_string        = ""
+	wait_group_delta    = 1
+	max_concurrent_gets = 100
 )
 
 // CrawlerEngine - takes a queue of links that will be iterated through
@@ -22,66 +25,81 @@ type CrawlerEngine struct {
 	client       *http.Client
 	visitedLinks *map[string]bool
 	startUrl     string
+	waitGroup    *sync.WaitGroup
 }
 
-func NewCrawlerEngine(l *chan string, lp *chan string, c *http.Client, v *map[string]bool, u string) *CrawlerEngine {
+func NewCrawlerEngine(lp *chan string, c *http.Client, v *map[string]bool, u string, wg *sync.WaitGroup) *CrawlerEngine {
 	return &CrawlerEngine{
-		linksToVisit: l,
 		client:       c,
 		visitedLinks: v,
 		startUrl:     u,
 		linksToPrint: lp,
+		waitGroup:    wg,
 	}
 }
 
 // Crawl - loops thru the queue and visits each link fanning out onto child pages
 func (ce *CrawlerEngine) Crawl() {
-	enqueue(*ce.linksToVisit, ce.startUrl)
+	linksToVisit := make(chan string, max_concurrent_gets)
+	enqueue(linksToVisit, ce.startUrl, ce.waitGroup)
 	host := getHostFromUrl(ce.startUrl)
-	for link := range *ce.linksToVisit {
-		fullyFormedLink, err := createFullyFormedUrlIfRelative(host, link)
-		if err != nil {
-			fmt.Println(err.Error())
-		}
 
-		visitLink(ce, fullyFormedLink)
+	for i := 0; i < max_concurrent_gets; i++ {
+		go func() {
+			for link := range linksToVisit {
+				fullyFormedLink, err := createFullyFormedUrlIfRelative(host, link)
+				if err != nil {
+					fmt.Println("In Crawl", err.Error())
+				}
+
+				visitLink(ce, fullyFormedLink, linksToVisit)
+				ce.waitGroup.Done()
+			}
+		}()
 	}
+
+	ce.waitGroup.Wait()
+	// time.Sleep(time.Millisecond * 1000)
+	// os.Exit(0)
 }
 
+// Print - print anything in the linksToPrint channel
 func (ce *CrawlerEngine) Print() {
 	for {
-		msg := <-*ce.linksToPrint
-		fmt.Println(msg)
+		link := <-*ce.linksToPrint
+		fmt.Println(link)
 	}
 }
 
 // visitLink - visits, extracts the links and marks the page as visited
-func visitLink(ce *CrawlerEngine, link string) {
+func visitLink(ce *CrawlerEngine, link string, linksToVisit chan string) {
 	visited := *ce.visitedLinks
 	if _, found := visited[link]; !found {
-		visitLinkAndEnqueueChildLinks(ce, link)
-		enqueue(*ce.linksToPrint, link)
+		visitLinkAndEnqueueChildLinks(ce, link, linksToVisit)
+		enqueue(*ce.linksToPrint, link, nil)
 		visited[link] = true
 	}
 }
 
-func visitLinkAndEnqueueChildLinks(ce *CrawlerEngine, link string) {
+func visitLinkAndEnqueueChildLinks(ce *CrawlerEngine, link string, linksToVisit chan<- string) {
 	resp, err := ce.client.Get(link)
 	if err != nil {
-		fmt.Println(err.Error())
+		fmt.Println("BOMB!!!", err.Error())
 	}
 	defer resp.Body.Close()
+
 	host := getHostFromUrl(ce.startUrl)
 	childLinks := linkengine.GetLinks(resp.Body, host)
 
-	enqueueChildLinksWithinDomain(ce, childLinks)
+	enqueueChildLinksWithinDomain(ce, childLinks, linksToVisit)
 }
 
-func enqueueChildLinksWithinDomain(ce *CrawlerEngine, childLinks []string) {
+func enqueueChildLinksWithinDomain(ce *CrawlerEngine, childLinks []string, linksToVisit chan<- string) {
 	host := getHostFromUrl(ce.startUrl)
 	for _, link := range childLinks {
 		if isHrefWithinDomain(link, host) {
-			enqueue(*ce.linksToVisit, link)
+			ce.waitGroup.Add(wait_group_delta)
+			enqueue(linksToVisit, link, ce.waitGroup)
 		}
 	}
 }
@@ -92,9 +110,12 @@ func isHrefWithinDomain(link string, host string) bool {
 }
 
 // asynchronously queue
-func enqueue(c chan string, link string) {
+func enqueue(c chan<- string, message string, wg *sync.WaitGroup) {
 	go func() {
-		c <- link
+		if wg != nil {
+			wg.Add(wait_group_delta)
+		}
+		c <- message
 	}()
 }
 
