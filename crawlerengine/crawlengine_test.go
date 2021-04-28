@@ -22,10 +22,11 @@ func NewTestClient(fn RoundTripFunc) *http.Client {
 
 func TestVisitLinkNotVisited(t *testing.T) {
 	client := createFakeClient("")
-	queue := make(chan string)
+	linksToVisit := make(chan string, 1)
+	linksToPrint := make(chan string, 1)
 	visited := make(map[string]bool)
 
-	ce := NewCrawlerEngine(&queue, &client, &visited, "")
+	ce := NewCrawlerEngine(&linksToVisit, &linksToPrint, &client, &visited, "")
 	visitLink(ce, "test.com/tests")
 	visitedLinks := *ce.visitedLinks
 	if !visitedLinks["test.com/tests"] {

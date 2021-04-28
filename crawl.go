@@ -38,11 +38,15 @@ func main() {
 	}
 
 	client := createHttpClientWithoutSSLVerification()
-	queue := make(chan string)
+	linksToVisit := make(chan string, 1)
+	linksToPrint := make(chan string, 1)
 	visited := make(map[string]bool)
 
-	ce := crawlerengine.NewCrawlerEngine(&queue, &client, &visited, url)
-	ce.Crawl()
+	ce := crawlerengine.NewCrawlerEngine(&linksToVisit, &linksToPrint, &client, &visited, url)
+	go ce.Crawl()
+	go ce.Print()
+	var input string
+	fmt.Scanln(&input)
 }
 
 func createHttpClientWithoutSSLVerification() http.Client {

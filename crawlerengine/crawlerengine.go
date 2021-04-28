@@ -18,17 +18,19 @@ const (
 // CrawlerEngine - takes a queue of links that will be iterated through
 type CrawlerEngine struct {
 	linksToVisit *chan string
+	linksToPrint *chan string
 	client       *http.Client
 	visitedLinks *map[string]bool
 	startUrl     string
 }
 
-func NewCrawlerEngine(l *chan string, c *http.Client, v *map[string]bool, u string) *CrawlerEngine {
+func NewCrawlerEngine(l *chan string, lp *chan string, c *http.Client, v *map[string]bool, u string) *CrawlerEngine {
 	return &CrawlerEngine{
 		linksToVisit: l,
 		client:       c,
 		visitedLinks: v,
 		startUrl:     u,
+		linksToPrint: lp,
 	}
 }
 
@@ -46,12 +48,19 @@ func (ce *CrawlerEngine) Crawl() {
 	}
 }
 
+func (ce *CrawlerEngine) Print() {
+	for {
+		msg := <-*ce.linksToPrint
+		fmt.Println(msg)
+	}
+}
+
 // visitLink - visits, extracts the links and marks the page as visited
 func visitLink(ce *CrawlerEngine, link string) {
 	visited := *ce.visitedLinks
 	if _, found := visited[link]; !found {
-		go visitLinkAndEnqueueChildLinks(ce, link)
-		go fmt.Println(link)
+		visitLinkAndEnqueueChildLinks(ce, link)
+		enqueue(*ce.linksToPrint, link)
 		visited[link] = true
 	}
 }
@@ -61,12 +70,11 @@ func visitLinkAndEnqueueChildLinks(ce *CrawlerEngine, link string) {
 	if err != nil {
 		fmt.Println(err.Error())
 	}
-
 	defer resp.Body.Close()
 	host := getHostFromUrl(ce.startUrl)
 	childLinks := linkengine.GetLinks(resp.Body, host)
 
-	go enqueueChildLinksWithinDomain(ce, childLinks)
+	enqueueChildLinksWithinDomain(ce, childLinks)
 }
 
 func enqueueChildLinksWithinDomain(ce *CrawlerEngine, childLinks []string) {
@@ -84,9 +92,9 @@ func isHrefWithinDomain(link string, host string) bool {
 }
 
 // asynchronously queue
-func enqueue(linksToVisit chan string, link string) {
+func enqueue(c chan string, link string) {
 	go func() {
-		linksToVisit <- link
+		c <- link
 	}()
 }
 
